@@ -63,3 +63,24 @@ chmod +x /root/install-wg-easy.sh
 Что важно до запуска
 
 Домен вида vpn.твой-домен.ru должен уже смотреть на IP сервера. Иначе Let’s Encrypt не выпустится.
+
+Запуск без вопросов:
+
+```
+echo 'S3curePassw0rd!' > /root/wg-pass.txt
+chmod 600 /root/wg-pass.txt
+
+/root/install-wg-easy.sh \
+  --quiet \
+  --force \
+  --domain vpn.example.com \
+  --email admin@example.com \
+  --password-file /root/wg-pass.txt \
+  --wg-port 51820 \
+  --wg-dns 1.1.1.1,8.8.8.8 \
+  --wg-subnet 10.8.0.0/24
+```
+
+
+
+
