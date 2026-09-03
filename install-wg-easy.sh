@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_VERSION="2.3.0-tui-fixed"
-BACKTITLE="  WireGuard VPN + wg-easy  ▸  v${SCRIPT_VERSION}  ▸  sysnotes.ru  "
+SCRIPT_VERSION="2.3.0"
+BACKTITLE="  WireGuard VPN + wg-easy  ▸  v${SCRIPT_VERSION} "
 DW=74   # ширина всех диалогов
 
 # ─────────────────────────────── Пути ───────────────────────────────
