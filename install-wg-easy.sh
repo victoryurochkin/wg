@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_VERSION="2.3.0"
+SCRIPT_VERSION="2.4.0"
 BACKTITLE="  WireGuard VPN + wg-easy  ▸  v${SCRIPT_VERSION} "
 DW=74   # ширина всех диалогов
+
+# ─────────────────────────── Версия образа wg-easy ───────────────────────────
+# С 23.07.2026 тег :latest в ghcr.io/wg-easy/wg-easy указывает на v15 —
+# это полный переписанный релиз, который убрал почти все переменные
+# окружения (WG_HOST, PASSWORD_HASH, WG_PORT, WG_DEFAULT_ADDRESS,
+# WG_DEFAULT_DNS, WG_ALLOWED_IPS, WG_MTU, WG_PERSISTENT_KEEPALIVE,
+# UI_TRAFFIC_STATS...) — вся конфигурация в v15 задаётся через мастер
+# в веб-панели при первом заходе, а не через wg.env. Этот скрипт целиком
+# построен на v14-модели (env-файл + wgpw для хэша пароля), поэтому образ
+# жёстко закреплён на мажорной версии 14. Не меняй WG_EASY_TAG на "latest"
+# без переписывания inst_password_hash/inst_write_configs под v15.
+WG_EASY_TAG="14"
+WG_EASY_IMAGE="ghcr.io/wg-easy/wg-easy:${WG_EASY_TAG}"
 
 # ─────────────────────────────── Пути ───────────────────────────────
 WG_DIR="/opt/wg-easy"
@@ -718,7 +731,7 @@ inst_password_hash() {
 
     local raw
     raw="$(docker run --rm --env-file "${_ENVFILE}" \
-        ghcr.io/wg-easy/wg-easy:latest sh -c 'wgpw "$WG_PASSWORD"')" || true
+        "${WG_EASY_IMAGE}" sh -c 'wgpw "$WG_PASSWORD"')" || true
     rm -f "${_ENVFILE}"; _ENVFILE=""
 
     PASSWORD_HASH="$(printf '%s' "${raw}" \
@@ -740,8 +753,20 @@ inst_write_configs() {
     # Исправление 1: удаляем маску из шаблона адреса (wg-easy добавляет её сам)
     local address_no_mask="${WG_DEFAULT_ADDRESS%/*}"   # убираем всё после '/'
 
-    # Исправление 2: экранируем $ в хэше (заменяем каждый $ на $$)
-    local password_hash_esc="${PASSWORD_HASH//\$/$$}"
+    # Хэш пишем БЕЗ экранирования $.
+    # Официальная документация Compose ("Interpolation applies only to
+    # YAML values", docs.docker.com/reference/compose-file/interpolation)
+    # и багрепорт docker/docs#20735 сходятся в одном: подстановка $ → $$
+    # применяется только к самому compose.yml, а НЕ к содержимому файлов,
+    # подключённых через env_file: — а wg.env именно такой файл. Если тут
+    # удвоить $, в контейнер уйдёт битый хэш вида $$2a$$10$$..., и вход
+    # в панель по паролю перестанет работать.
+    # Экранирование снова понадобится, только если когда-нибудь перенесёшь
+    # PASSWORD_HASH в секцию `environment:` самого docker-compose.yml —
+    # та секция интерполируется Compose'ом, в отличие от env_file.
+    # Рекомендация: после первой установки обязательно проверь вход
+    # в https://${WG_DOMAIN} тем паролем, что вводил на шаге 3.
+    local password_hash_esc="${PASSWORD_HASH}"
 
     cat > "${ENV_FILE}" <<EOF
 LANG=ru
@@ -761,7 +786,7 @@ EOF
     cat > "${COMPOSE_FILE}" <<EOF
 services:
   wg-easy:
-    image: ghcr.io/wg-easy/wg-easy:latest
+    image: ${WG_EASY_IMAGE}
     container_name: wg-easy
     restart: unless-stopped
     env_file:
@@ -892,6 +917,12 @@ inst_show_success() {
   Панель wg-easy:   https://${WG_DOMAIN}
   Endpoint VPN:     ${WG_HOST}:${WG_PORT}/udp
   Пароль:           ${stars}
+  Образ:            ${WG_EASY_IMAGE}
+
+  ⚠  Контейнер запущен — это ещё не значит, что панель
+     приняла домен/пароль из wg.env. Зайди на
+     https://${WG_DOMAIN} и войди указанным паролем,
+     прежде чем закрывать терминал.
 
   Каталог:          ${WG_DIR}
   Данные WG:        ${WG_DIR}/data
@@ -908,7 +939,7 @@ inst_show_success() {
 
   Диагностика  [интерфейс: ${WG_DEVICE}]:
     ss -lnup 'sport = :${WG_PORT}'
-    tcpdump -ni ${WG_DEVICE} udp port ${WG_PORT}" 30
+    tcpdump -ni ${WG_DEVICE} udp port ${WG_PORT}" 35
 }
 
 # ═══════════════════════════════════════════════════════
